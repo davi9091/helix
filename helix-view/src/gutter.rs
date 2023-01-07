@@ -62,40 +62,20 @@ pub fn diagnostic<'doc>(
 
     Box::new(move |line: usize, _selected: bool, out: &mut String| {
         use helix_core::diagnostic::Severity;
-        if let Some(diagnostics_on_line) = diagnostic_by_line(diagnostics, line) {
-            let diagnostic = diagnostics_on_line.max_by_key(|d| d.severity).unwrap();
 
-            write!(out, "●").unwrap();
-            Some(match diagnostic.severity {
-                Some(Severity::Error) => error,
-                Some(Severity::Warning) | None => warning,
-                Some(Severity::Info) => info,
-                Some(Severity::Hint) => hint,
-            })
-        } else {
-            None
-        }
+        // This unwrap is safe because the iterator cannot be empty as it contains at least the item found by the binary search.
+        let line_diagnostic = diagnostic_by_line(diagnostics, line)?
+            .max_by_key(|d| d.severity)
+            .unwrap();
+
+        write!(out, "●").unwrap();
+        Some(match line_diagnostic.severity {
+            Some(Severity::Error) => error,
+            Some(Severity::Warning) | None => warning,
+            Some(Severity::Info) => info,
+            Some(Severity::Hint) => hint,
+        })
     })
-}
-
-pub fn diagnostic_by_line<'a>(
-    diagnostics: &'a [Diagnostic],
-    line_number: usize,
-) -> Option<impl Iterator<Item = &'a Diagnostic>> {
-    if let Ok(index) = diagnostics.binary_search_by_key(&line_number, |d| d.line) {
-        let after = diagnostics[index..]
-            .iter()
-            .take_while(move |d| d.line == line_number);
-
-        let before = diagnostics[..index]
-            .iter()
-            .rev()
-            .take_while(move |d| d.line == line_number);
-
-        Some(after.chain(before))
-    } else {
-        None
-    }
 }
 
 pub fn diff<'doc>(
@@ -173,7 +153,7 @@ pub fn line_numbers<'doc>(
         .char_to_line(doc.selection(view.id).primary().cursor(text));
 
     let line_number = editor.config().line_number;
-    let line_number_diagnostic = editor.config().line_number_diagnostic;
+    let diagnostics_in_line_number = editor.config().diagnostics_in_line_number;
     let mode = editor.mode;
     let diagnostics = doc.diagnostics();
 
@@ -185,7 +165,7 @@ pub fn line_numbers<'doc>(
             use crate::{document::Mode, editor::LineNumber};
 
             let diagnostic = match diagnostic_by_line(diagnostics, line) {
-                Some(diagnostics_on_line) if line_number_diagnostic => {
+                Some(diagnostics_on_line) if diagnostics_in_line_number => {
                     use helix_core::diagnostic::Severity;
                     let diagnostic = diagnostics_on_line.max_by_key(|d| d.severity).unwrap();
                     match diagnostic.severity {
@@ -312,8 +292,8 @@ pub fn diagnostics_or_breakpoints<'doc>(
     theme: &Theme,
     is_focused: bool,
 ) -> GutterFn<'doc> {
-    let line_number_diagnostics = editor.config().line_number_diagnostic;
-    let mut diagnostics = if !line_number_diagnostics {
+    let diagnostics_in_line_number = editor.config().diagnostics_in_line_number;
+    let mut diagnostics = if !diagnostics_in_line_number {
         diagnostic(editor, doc, view, theme, is_focused)
     } else {
         Box::new(move |_line: usize, _selected: bool, _out: &mut String| None)
@@ -323,4 +303,24 @@ pub fn diagnostics_or_breakpoints<'doc>(
     Box::new(move |line, selected, out| {
         breakpoints(line, selected, out).or_else(|| diagnostics(line, selected, out))
     })
+}
+
+fn diagnostic_by_line<'doc>(
+    diagnostics: &'doc [Diagnostic],
+    line_number: usize,
+) -> Option<impl Iterator<Item = &'doc Diagnostic>> {
+    if let Ok(index) = diagnostics.binary_search_by_key(&line_number, |d| d.line) {
+        let after = diagnostics[index..]
+            .iter()
+            .take_while(move |d| d.line == line_number);
+
+        let before = diagnostics[..index]
+            .iter()
+            .rev()
+            .take_while(move |d| d.line == line_number);
+
+        Some(after.chain(before))
+    } else {
+        None
+    }
 }

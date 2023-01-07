@@ -129,7 +129,7 @@ pub struct Config {
     /// Line number mode.
     pub line_number: LineNumber,
     /// Colour line numbers on error instead of diagnostic dots.
-    pub line_number_diagnostic: bool,
+    pub diagnostics_in_line_number: bool,
     /// Highlight the lines cursors are currently on. Defaults to false.
     pub cursorline: bool,
     /// Highlight the columns cursors are currently on. Defaults to false.
@@ -603,7 +603,7 @@ impl Default for Config {
                 vec!["sh".to_owned(), "-c".to_owned()]
             },
             line_number: LineNumber::Absolute,
-            line_number_diagnostic: false,
+            diagnostics_in_line_number: false,
             cursorline: false,
             cursorcolumn: false,
             gutters: vec![
