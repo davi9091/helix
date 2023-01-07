@@ -63,9 +63,9 @@ pub fn diagnostic<'doc>(
     Box::new(move |line: usize, _selected: bool, out: &mut String| {
         use helix_core::diagnostic::Severity;
 
-        // This unwrap is safe because the iterator cannot be empty as it contains at least the item found by the binary search.
         let line_diagnostic = diagnostic_by_line(diagnostics, line)?
             .max_by_key(|d| d.severity)
+            // This unwrap is safe because the iterator cannot be empty as it contains at least the item found by the binary search.
             .unwrap();
 
         write!(out, "●").unwrap();
