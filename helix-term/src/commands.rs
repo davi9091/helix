@@ -244,6 +244,7 @@ impl MappableCommand {
         select_regex, "Select all regex matches inside selections",
         split_selection, "Split selections on regex matches",
         split_selection_on_newline, "Split selection on newlines",
+        merge_consecutive_selections, "Merge consecutive selections",
         search, "Search for regex pattern",
         rsearch, "Reverse search for regex pattern",
         search_next, "Select next search match",
@@ -1589,6 +1590,12 @@ fn split_selection_on_newline(cx: &mut Context) {
     doc.set_selection(view.id, selection);
 }
 
+fn merge_consecutive_selections(cx: &mut Context) {
+    let (view, doc) = current!(cx.editor);
+    let selection = doc.selection(view.id).clone().merge_consecutive_ranges();
+    doc.set_selection(view.id, selection);
+}
+
 #[allow(clippy::too_many_arguments)]
 fn search_impl(
     editor: &mut Editor,
@@ -2046,16 +2053,10 @@ fn extend_line_impl(cx: &mut Context, extend: Extend) {
     let selection = doc.selection(view.id).clone().transform(|range| {
         let (start_line, end_line) = range.line_range(text.slice(..));
 
-        let start = text.line_to_char(match extend {
-            Extend::Above => start_line.saturating_sub(count - 1),
-            Extend::Below => start_line,
-        });
+        let start = text.line_to_char(start_line);
         let end = text.line_to_char(
-            match extend {
-                Extend::Above => end_line + 1, // the start of next line
-                Extend::Below => end_line + count,
-            }
-            .min(text.len_lines()),
+            (end_line + 1) // newline of end_line
+                .min(text.len_lines()),
         );
 
         // extend to previous/next line if current line is selected
@@ -2069,8 +2070,11 @@ fn extend_line_impl(cx: &mut Context, extend: Extend) {
             }
         } else {
             match extend {
-                Extend::Above => (end, start),
-                Extend::Below => (start, end),
+                Extend::Above => (end, text.line_to_char(start_line.saturating_sub(count - 1))),
+                Extend::Below => (
+                    start,
+                    text.line_to_char((end_line + count).min(text.len_lines())),
+                ),
             }
         };
 
@@ -3166,8 +3170,7 @@ pub mod insert {
                 let on_auto_pair = doc
                     .auto_pairs(cx.editor)
                     .and_then(|pairs| pairs.get(prev))
-                    .and_then(|pair| if pair.close == curr { Some(pair) } else { None })
-                    .is_some();
+                    .map_or(false, |pair| pair.open == prev && pair.close == curr);
 
                 let local_offs = if on_auto_pair {
                     let inner_indent = indent.clone() + doc.indent_style.as_str();
