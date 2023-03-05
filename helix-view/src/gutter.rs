@@ -63,10 +63,7 @@ pub fn diagnostic<'doc>(
     Box::new(move |line: usize, _selected: bool, out: &mut String| {
         use helix_core::diagnostic::Severity;
 
-        let line_diagnostic = diagnostic_by_line(diagnostics, line)?
-            .max_by_key(|d| d.severity)
-            // This unwrap is safe because the iterator cannot be empty as it contains at least the item found by the binary search.
-            .unwrap();
+        let line_diagnostic = diagnostic_by_line(diagnostics, line)?;
 
         write!(out, "●").unwrap();
         Some(match line_diagnostic.severity {
@@ -164,10 +161,10 @@ pub fn line_numbers<'doc>(
         } else {
             use crate::{document::Mode, editor::LineNumber};
 
-            let diagnostic = match diagnostic_by_line(diagnostics, line) {
+            let mb_diagnostic_style = match diagnostic_by_line(diagnostics, line) {
                 Some(diagnostics_on_line) if diagnostics_in_line_number => {
                     use helix_core::diagnostic::Severity;
-                    let diagnostic = diagnostics_on_line.max_by_key(|d| d.severity).unwrap();
+                    let diagnostic = diagnostics_on_line;
                     match diagnostic.severity {
                         Some(Severity::Error) => Some(error),
                         Some(Severity::Warning) => Some(warning),
@@ -190,8 +187,8 @@ pub fn line_numbers<'doc>(
                 line + 1
             };
 
-            let style = if let Some(diagnostic) = diagnostic {
-                diagnostic
+            let style = if let Some(diagnostic_style) = mb_diagnostic_style {
+                diagnostic_style
             } else if selected && is_focused {
                 linenr_select
             } else {
@@ -308,7 +305,7 @@ pub fn diagnostics_or_breakpoints<'doc>(
 fn diagnostic_by_line<'doc>(
     diagnostics: &'doc [Diagnostic],
     line_number: usize,
-) -> Option<impl Iterator<Item = &'doc Diagnostic>> {
+) -> Option<&'doc Diagnostic> {
     if let Ok(index) = diagnostics.binary_search_by_key(&line_number, |d| d.line) {
         let after = diagnostics[index..]
             .iter()
@@ -319,7 +316,7 @@ fn diagnostic_by_line<'doc>(
             .rev()
             .take_while(move |d| d.line == line_number);
 
-        Some(after.chain(before))
+        after.chain(before).max_by_key(|d| d.severity)
     } else {
         None
     }
