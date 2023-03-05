@@ -164,8 +164,7 @@ pub fn line_numbers<'doc>(
             let mb_diagnostic_style = match diagnostic_by_line(diagnostics, line) {
                 Some(diagnostics_on_line) if diagnostics_in_line_number => {
                     use helix_core::diagnostic::Severity;
-                    let diagnostic = diagnostics_on_line;
-                    match diagnostic.severity {
+                    match diagnostics_on_line.severity {
                         Some(Severity::Error) => Some(error),
                         Some(Severity::Warning) => Some(warning),
                         Some(Severity::Info) => Some(info),
