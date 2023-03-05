@@ -1,5 +1,7 @@
 use std::fmt::Write;
 
+use helix_core::Diagnostic;
+
 use crate::{
     editor::GutterType,
     graphics::{Color, Style, UnderlineStyle},
@@ -60,28 +62,16 @@ pub fn diagnostic<'doc>(
 
     Box::new(move |line: usize, _selected: bool, out: &mut String| {
         use helix_core::diagnostic::Severity;
-        if let Ok(index) = diagnostics.binary_search_by_key(&line, |d| d.line) {
-            let after = diagnostics[index..].iter().take_while(|d| d.line == line);
 
-            let before = diagnostics[..index]
-                .iter()
-                .rev()
-                .take_while(|d| d.line == line);
+        let line_diagnostic = diagnostic_by_line(diagnostics, line)?;
 
-            let diagnostics_on_line = after.chain(before);
-
-            // This unwrap is safe because the iterator cannot be empty as it contains at least the item found by the binary search.
-            let diagnostic = diagnostics_on_line.max_by_key(|d| d.severity).unwrap();
-
-            write!(out, "●").unwrap();
-            return Some(match diagnostic.severity {
-                Some(Severity::Error) => error,
-                Some(Severity::Warning) | None => warning,
-                Some(Severity::Info) => info,
-                Some(Severity::Hint) => hint,
-            });
-        }
-        None
+        write!(out, "●").unwrap();
+        Some(match line_diagnostic.severity {
+            Some(Severity::Error) => error,
+            Some(Severity::Warning) | None => warning,
+            Some(Severity::Info) => info,
+            Some(Severity::Hint) => hint,
+        })
     })
 }
 
@@ -150,12 +140,19 @@ pub fn line_numbers<'doc>(
     let linenr = theme.get("ui.linenr");
     let linenr_select = theme.get("ui.linenr.selected");
 
+    let warning = theme.get("warning");
+    let error = theme.get("error");
+    let info = theme.get("info");
+    let hint = theme.get("hint");
+
     let current_line = doc
         .text()
         .char_to_line(doc.selection(view.id).primary().cursor(text));
 
     let line_number = editor.config().line_number;
+    let diagnostics_in_line_number = editor.config().diagnostics_in_line_number;
     let mode = editor.mode;
+    let diagnostics = doc.diagnostics();
 
     Box::new(move |line: usize, selected: bool, out: &mut String| {
         if line == last_line && !draw_last {
@@ -163,6 +160,20 @@ pub fn line_numbers<'doc>(
             Some(linenr)
         } else {
             use crate::{document::Mode, editor::LineNumber};
+
+            let mb_diagnostic_style = match diagnostic_by_line(diagnostics, line) {
+                Some(diagnostics_on_line) if diagnostics_in_line_number => {
+                    use helix_core::diagnostic::Severity;
+                    match diagnostics_on_line.severity {
+                        Some(Severity::Error) => Some(error),
+                        Some(Severity::Warning) => Some(warning),
+                        Some(Severity::Info) => Some(info),
+                        Some(Severity::Hint) => Some(hint),
+                        None => None,
+                    }
+                }
+                _ => None,
+            };
 
             let relative = line_number == LineNumber::Relative
                 && mode != Mode::Insert
@@ -175,7 +186,9 @@ pub fn line_numbers<'doc>(
                 line + 1
             };
 
-            let style = if selected && is_focused {
+            let style = if let Some(diagnostic_style) = mb_diagnostic_style {
+                diagnostic_style
+            } else if selected && is_focused {
                 linenr_select
             } else {
                 linenr
@@ -275,10 +288,32 @@ pub fn diagnostics_or_breakpoints<'doc>(
     theme: &Theme,
     is_focused: bool,
 ) -> GutterFn<'doc> {
-    let mut diagnostics = diagnostic(editor, doc, view, theme, is_focused);
+    let diagnostics_in_line_number = editor.config().diagnostics_in_line_number;
+    let mut diagnostics = if !diagnostics_in_line_number {
+        diagnostic(editor, doc, view, theme, is_focused)
+    } else {
+        Box::new(move |_line: usize, _selected: bool, _out: &mut String| None)
+    };
     let mut breakpoints = breakpoints(editor, doc, view, theme, is_focused);
 
     Box::new(move |line, selected, out| {
         breakpoints(line, selected, out).or_else(|| diagnostics(line, selected, out))
     })
+}
+
+fn diagnostic_by_line(diagnostics: &[Diagnostic], line_number: usize) -> Option<&Diagnostic> {
+    if let Ok(index) = diagnostics.binary_search_by_key(&line_number, |d| d.line) {
+        let after = diagnostics[index..]
+            .iter()
+            .take_while(move |d| d.line == line_number);
+
+        let before = diagnostics[..index]
+            .iter()
+            .rev()
+            .take_while(move |d| d.line == line_number);
+
+        after.chain(before).max_by_key(|d| d.severity)
+    } else {
+        None
+    }
 }
