@@ -302,10 +302,7 @@ pub fn diagnostics_or_breakpoints<'doc>(
     })
 }
 
-fn diagnostic_by_line<'doc>(
-    diagnostics: &'doc [Diagnostic],
-    line_number: usize,
-) -> Option<&'doc Diagnostic> {
+fn diagnostic_by_line(diagnostics: &[Diagnostic], line_number: usize) -> Option<&Diagnostic> {
     if let Ok(index) = diagnostics.binary_search_by_key(&line_number, |d| d.line) {
         let after = diagnostics[index..]
             .iter()
